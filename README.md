@@ -3,11 +3,9 @@
 > **让视频生成训练像搭积木一样简单**  
 > *Making video generation training as easy as building blocks.*
 
-**[中文](#readme-zh)** · **[English](#readme-en)** · **[快速开始](#快速开始)**
+**[中文](README.md)** · **[English](README_en.md)** · **[快速开始](#快速开始)**
 
 ---
-
-<a id="readme-zh"></a>
 
 ## 📋 项目简介
 
@@ -61,59 +59,6 @@ EasyVidGen 是一款面向视频生成模型的轻量化、模块化训练工具
 
 ---
 
-<a id="readme-en"></a>
-
-## 📋 Introduction
-
-EasyVidGen is a lightweight, modular training toolkit for video generation models. It streamlines the training workflow so you can focus on ideas instead of boilerplate—train, debug, and ship faster.
-
-## 🚀 Features
-
-- **Modular**: Data loading, training, and inference are decoupled.
-- **Ready to run**: Minimal config; start training with one command.
-- **Ecosystem-friendly**: Built on Accelerate and common video-generation stacks.
-- **Lean**: Fewer dependencies, focused on training efficiency.
-
----
-
-## 🗺️ Roadmap (TBD)
-
-> The project is evolving—issues and PRs are welcome!
-
-### ✅ Done
-
-- [x] Project skeleton and layout
-- [x] Modular architecture
-
-### 🎯 Near term
-
-- [ ] One-click training for mainstream video models (e.g. Wan, LTX)
-- [ ] Training logs and monitoring
-- [ ] Multi-GPU / distributed training
-- [ ] Plugin-style custom modules
-
-### 🔮 Long term
-
-- [ ] Faster iteration out of the box
-- [ ] Auto-tuning for video models
-- [ ] More pretrained weights and templates
-
----
-
-## 🤝 Contributing
-
-We welcome bug reports, feature ideas, documentation improvements, and new modules.
-
-## 📄 License
-
-[MIT License](LICENSE)
-
----
-
-<a id="快速开始"></a>
-
 ## 快速开始
 
 详见仓库内训练与推理脚本（如 `train/`、`inference/` 目录）。配置与命令以各子目录说明为准。
-
-For a quick start in English, see the `train/` and `inference/` folders and their scripts or comments.
