@@ -1,0 +1,29 @@
+# 2×GPU + DeepSpeed ZeRO-2（ds_z2_config.json）
+# 用法（在仓库根目录）:
+#   accelerate launch --config_file config/accelerate/accelerate_2gpu_zero2.yaml trainers/trainer_lora_i2v.py ...
+#
+# 不要与命令行再传 --num_processes=1；进程数由本文件决定。
+
+compute_environment: LOCAL_MACHINE
+debug: false
+distributed_type: DEEPSPEED
+downcast_bf16: 'no'
+enable_cpu_affinity: false
+gpu_ids: all
+machine_rank: 0
+main_training_function: main
+mixed_precision: bf16
+num_machines: 1
+num_processes: 2
+rdzv_backend: static
+same_network: true
+tpu_env: []
+tpu_use_cluster: false
+tpu_use_sudo: false
+use_cpu: false
+
+deepspeed_config:
+  deepspeed_config_file: config/deepspeed/ds_z2_config.json
+  deepspeed_hostfile: ''
+  deepspeed_multinode_launcher: standard
+  zero3_init_flag: false

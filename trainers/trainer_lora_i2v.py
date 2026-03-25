@@ -1,12 +1,16 @@
 import os
 import sys
+from pathlib import Path
+
+# Repo root on sys.path so `import src.*` works when launching this file directly
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
 import math
 import json
-import shutil
-import logging
 import numpy as np
 from PIL import Image
-from pathlib import Path
 from tqdm.auto import tqdm
 from einops import rearrange
 from typing import List, Optional, Tuple, Union, Any
@@ -14,9 +18,8 @@ from typing import List, Optional, Tuple, Union, Any
 import torch
 
 import accelerate
-from accelerate import Accelerator
 from accelerate.logging import get_logger
-from accelerate.utils import DistributedType, ProjectConfiguration, set_seed
+from accelerate.utils import DistributedType
 
 import transformers
 # from transformers import AutoTokenizer, UMT5EncoderModel, CLIPVisionModel
@@ -36,16 +39,17 @@ from diffusers.training_utils import (
     compute_loss_weighting_for_sd3
 )
 
-from peft import LoraConfig, get_peft_model_state_dict, set_peft_model_state_dict
+# from peft import LoraConfig, get_peft_model_state_dict, set_peft_model_state_dict
 from torch.nn.attention.flex_attention import flex_attention
 from safetensors.torch import save_file, load_file
 
-from src.trainers.utils import unwrap_model, get_memory_statistics, free_memory, print_memory
+from src.utils.utils import unwrap_model, get_memory_statistics, free_memory, print_memory
 from src.datasets.dataset import VideoDataset, collate_fn
-from src.schedulers.noise_scheduler import ShiftedLogitNormalTimestepSampler
-from src.pipelines.pipeline_i2v import WanImageToVideoPipeline
-from src.models.transformer import WanTransformer3DModel
-from src.models.lora import WanAttnProcessorLora
+from src.schedulers.shift_logit_norm_scheduler import ShiftedLogitNormTimestepSampler
+from src.pipelines.wan.pipeline_i2v import WanImageToVideoPipeline
+from src.models.wan.transformer import WanTransformer3DModel
+from src.models.wan.lora import WanAttnProcessorLora
+from trainers.base_trainer import BaseTrainer
 
 import torch._dynamo
 torch._dynamo.config.suppress_errors = True
@@ -56,96 +60,17 @@ check_min_version("0.18.0.dev0")
 logger = get_logger(__name__, log_level="INFO")
 
 
-class Trainer:
+class Trainer(BaseTrainer):
+    """Wan I2V LoRA training; extends :class:`BaseTrainer` with Wan VAE / I2V pipeline and loss."""
+
     def __init__(self, args):
-        self.args = args
-        if self.args.report_to == "wandb" and self.args.hub_token is not None:
+        if args.report_to == "wandb" and args.hub_token is not None:
             raise ValueError(
                 "You cannot use both --report_to=wandb and --hub_token due to a security risk of exposing your token."
                 " Please use `huggingface-cli login` to authenticate with the Hub."
             )
+        super().__init__(args)
 
-        self._init_distributed()
-        self._init_logging()
-        self._init_directories()
-        self._init_weight_dtype()
-        self._init_models()
-        self._init_noise_scheduler()
-
-    def _init_distributed(self):
-        logging_dir = Path(self.args.output_dir, self.args.logging_dir)
-        self.args.validation_dir = os.path.join(self.args.output_dir, "validate")
-        os.makedirs(self.args.validation_dir, exist_ok=True)
-        os.makedirs(logging_dir, exist_ok=True)
-
-        accelerator_project_config = ProjectConfiguration(project_dir=self.args.output_dir, logging_dir=str(logging_dir))
-
-        accelerator = Accelerator(
-            gradient_accumulation_steps=self.args.gradient_accumulation_steps,
-            mixed_precision=self.args.mixed_precision,
-            log_with=self.args.report_to,
-            project_config=accelerator_project_config
-        )
-
-        # Disable AMP for MPS. A technique for accelerating machine learning computations on iOS and macOS devices.
-        if torch.backends.mps.is_available():
-            logger.info("MPS is enabled. Disabling AMP.")
-            accelerator.native_amp = False
-
-        self.accelerator = accelerator
-
-        # If passed along, set the training seed now.
-        if self.args.seed is not None:
-            set_seed(self.args.seed)
-
-    def _init_logging(self):
-        # Make one log on every process with the configuration for debugging.
-        logging.basicConfig(
-            format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-            datefmt="%m/%d/%Y %H:%M:%S",
-            # DEBUG, INFO, WARNING, ERROR, CRITICAL
-            level=logging.INFO,
-        )
-
-        if self.accelerator.is_local_main_process:
-            transformers.utils.logging.set_verbosity_warning()
-            diffusers.utils.logging.set_verbosity_info()
-        else:
-            transformers.utils.logging.set_verbosity_error()
-            diffusers.utils.logging.set_verbosity_error()
-
-        logger.info("Initialized Trainer")
-        logger.info(f"Accelerator state: \n{self.accelerator.state}", main_process_only=False)
-
-    def _init_directories(self):
-        # Handle the repository creation
-        if self.accelerator.is_main_process:
-            if self.args.output_dir is not None:
-                os.makedirs(self.args.output_dir, exist_ok=True)
-
-    def _init_weight_dtype(self):
-        # For mixed precision training we cast all non-trainable weights (vae, text_encoder and transformer) to half-precision
-        # as these weights are only used for inference, keeping weights in full precision is not required.
-        weight_dtype = torch.float32
-        if self.accelerator.state.deepspeed_plugin:
-            # DeepSpeed is handling precision, use what's in the DeepSpeed config
-            if (
-                "fp16" in self.accelerator.state.deepspeed_plugin.deepspeed_config
-                and self.accelerator.state.deepspeed_plugin.deepspeed_config["fp16"]["enabled"]
-            ):
-                weight_dtype = torch.float16
-            if (
-                "bf16" in self.accelerator.state.deepspeed_plugin.deepspeed_config
-                and self.accelerator.state.deepspeed_plugin.deepspeed_config["bf16"]["enabled"]
-            ):
-                weight_dtype = torch.bfloat16
-        else:
-            if self.accelerator.mixed_precision == "fp16":
-                weight_dtype = torch.float16
-            elif self.accelerator.mixed_precision == "bf16":
-                weight_dtype = torch.bfloat16
-        self.weight_dtype = weight_dtype
-    
     # 3D VAE
     def _load_vae(self):
         vae = AutoencoderKLWan.from_pretrained(
@@ -190,9 +115,10 @@ class Trainer:
 
     def _init_noise_scheduler(self):
         logger.info("Initializing noise scheduler")
-        noise_scheduler = ShiftedLogitNormalTimestepSampler(shift=self.args.noise_shift, distribution_type=self.args.noise_distribution)
-
-        self.noise_scheduler = noise_scheduler
+        self.noise_scheduler = ShiftedLogitNormTimestepSampler(
+            shift=self.args.noise_shift,
+            distribution_type=self.args.noise_distribution,
+        )
 
     def prepare_dataset(self):
         logger.info("Initializing dataset and dataloader")
@@ -209,7 +135,6 @@ class Trainer:
             collate_fn=collate_fn,
             batch_size=self.args.train_batch_size,
             num_workers=self.args.dataloader_num_workers,
-            prefetch_factor=1,
             # pin_memory=True,
             # persistent_workers=True,
         )
@@ -301,11 +226,6 @@ class Trainer:
             }
         ]
 
-        self.trainable_names = []
-        for name, param in self.transformer.named_parameters():
-            if param.requires_grad:
-                self.trainable_names.append(name)
-                
         optimizer = optimizer_cls(
             params_to_optimize,
             betas=(self.args.adam_beta1, self.args.adam_beta2),
@@ -358,22 +278,8 @@ class Trainer:
 
     def prepare_trackers(self):
         logger.info("Initializing trackers")
-
-        # We need to initialize the trackers we use, and also store our configuration.
-        # The trackers initializes automatically on the main process.
+        super().prepare_trackers()
         if self.accelerator.is_main_process:
-            tracker_config = dict(vars(self.args))
-
-            # ✅ 过滤掉不支持的类型
-            filtered_config = {}
-            for key, value in tracker_config.items():
-                if isinstance(value, (list, tuple)):
-                    filtered_config[key] = str(value)
-                else:
-                    filtered_config[key] = value
-
-            self.accelerator.init_trackers(self.args.tracker_project_name, config=filtered_config)
-
             self.accelerator.print("===== Memory before training =====")
             free_memory(self.accelerator.device)
             print_memory(self.accelerator.device)
@@ -395,35 +301,20 @@ class Trainer:
         logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}")
         logger.info(f"  Gradient Accumulation steps = {self.args.gradient_accumulation_steps}")
         logger.info(f"  Total optimization steps = {self.args.max_train_steps}")
-        global_step = 0
-        first_epoch = 0
 
-        # Potentially load in the weights and states from a previous save
-        if not self.args.resume_from_checkpoint:
-            initial_global_step = 0
-        else:
-            if self.args.resume_from_checkpoint != "latest":
-                path = os.path.basename(self.args.resume_from_checkpoint)
-            else:
-                # Get the mos recent checkpoint
-                dirs = os.listdir(self.args.output_dir)
-                dirs = [d for d in dirs if d.startswith("checkpoint")]
-                dirs = sorted(dirs, key=lambda x: int(x.split("-")[1]))
-                path = dirs[-1] if len(dirs) > 0 else None
-
-            if path is None:
-                self.accelerator.print(
-                    f"Checkpoint '{self.args.resume_from_checkpoint}' does not exist. Starting a new training run."
-                )
-                self.args.resume_from_checkpoint = None
-                initial_global_step = 0
-            else:
-                self.accelerator.print(f"Resuming from checkpoint {path}")
-                self.accelerator.load_state(os.path.join(self.args.output_dir, path))
-                global_step = int(path.split("-")[1])
-
-                initial_global_step = global_step
-                first_epoch = global_step // self.num_update_steps_per_epoch
+        resume_arg = self.args.resume_from_checkpoint or None
+        (
+            _resume_ckpt_path,
+            initial_global_step,
+            global_step,
+            first_epoch,
+        ) = self.get_latest_ckpt_path_to_resume_from(
+            resume_arg,
+            self.args.output_dir,
+            self.num_update_steps_per_epoch,
+        )
+        if resume_arg and initial_global_step == 0:
+            self.args.resume_from_checkpoint = None
 
         progress_bar = tqdm(
             range(0, self.args.max_train_steps),
@@ -448,7 +339,7 @@ class Trainer:
             self.transformer.train()
             for step, batch in enumerate(self.train_dataloader):
                 with self.accelerator.accumulate(self.transformer):
-                    loss = self.compute_loss(batch, vae_stream, step)
+                    loss = self.compute_loss(batch, vae_stream)
                     self.accelerator.backward(loss)
 
                     if self.accelerator.sync_gradients:
@@ -468,44 +359,32 @@ class Trainer:
                     # DeepSpeed requires saving weights on every device; saving weights only on the main process would cause issues.
                     if self.accelerator.distributed_type == DistributedType.DEEPSPEED or self.accelerator.is_main_process:
                         if global_step % self.args.checkpointing_steps == 0:
-                            # self.accelerator.wait_for_everyone()
-                            # _before_ saving state, check if this save would set us over the `checkpoints_total_limit`
-                            if self.args.checkpoints_total_limit is not None:
-                                checkpoints = os.listdir(self.args.output_dir)
-                                checkpoints = [d for d in checkpoints if d.startswith("checkpoint")]
-                                checkpoints = sorted(checkpoints, key=lambda x: int(x.split("-")[1]))
-
-                                # before we save the new checkpoint, we need to have at _most_ `checkpoints_total_limit - 1` checkpoints
-                                if len(checkpoints) >= self.args.checkpoints_total_limit:
-                                    num_to_remove = len(checkpoints) - self.args.checkpoints_total_limit + 1
-                                    removing_checkpoints = checkpoints[0:num_to_remove]
-
-                                    logger.info(
-                                        f"{len(checkpoints)} checkpoints already exist, removing {len(removing_checkpoints)} checkpoints"
-                                    )
-                                    logger.info(f"removing checkpoints: {', '.join(removing_checkpoints)}")
-
-                                    for removing_checkpoint in removing_checkpoints:
-                                        removing_checkpoint = os.path.join(self.args.output_dir, removing_checkpoint)
-                                        shutil.rmtree(removing_checkpoint)
-
-                            save_path = os.path.join(self.args.output_dir, f"checkpoint-{global_step}")
+                            save_path = self.get_intermediate_ckpt_path(
+                                self.args.checkpoints_total_limit,
+                                global_step,
+                                self.args.output_dir,
+                            )
                             self.accelerator.save_state(save_path)
                             logger.info(f"Saved state to {save_path}")
 
-                        if global_step % self.args.validation_epochs == 0 and self.accelerator.is_main_process:
-                            # self.accelerator.wait_for_everyone()
-                            pipe = WanImageToVideoPipeline.from_pretrained(
-                                self.args.pretrained_model_name_or_path,
-                                vae=self.accelerator.unwrap_model(self.vae),
-                                transformer=self.accelerator.unwrap_model(self.transformer),
-                                text_encoder=self.accelerator.unwrap_model(self.text_image_encoding_pipeline.text_encoder),
-                                torch_dtype=self.weight_dtype,
-                                local_files_only=True,
-                            )
-                            pipeline_args = {"prompt": self.args.validation_prompt, "num_frames": self.args.video_sample_n_frames, "height":self.args.video_sample_height, "width":self.args.video_sample_width, "guidance_scale":5.0}
-                            with torch.no_grad():
-                                self.log_validation(pipe, self.accelerator, self.args, global_step, pipeline_args=pipeline_args)
+                    if global_step % self.args.validation_epochs == 0 and self.accelerator.is_main_process:
+                        pipe = WanImageToVideoPipeline.from_pretrained(
+                            self.args.pretrained_model_name_or_path,
+                            vae=self.accelerator.unwrap_model(self.vae),
+                            transformer=self.accelerator.unwrap_model(self.transformer),
+                            text_encoder=self.accelerator.unwrap_model(self.text_image_encoding_pipeline.text_encoder),
+                            torch_dtype=self.weight_dtype,
+                            local_files_only=True,
+                        )
+                        pipeline_args = {
+                            "prompt": self.args.validation_prompt,
+                            "num_frames": self.args.video_sample_n_frames,
+                            "height": self.args.video_sample_height,
+                            "width": self.args.video_sample_width,
+                            "guidance_scale": 5.0,
+                        }
+                        with torch.no_grad():
+                            self.log_validation(pipe, self.accelerator, self.args, global_step, pipeline_args=pipeline_args)
 
                 logs = {"loss": loss.detach().item(), "lr": self.lr_scheduler.get_last_lr()[0]}
                 progress_bar.set_postfix(**logs)
@@ -533,15 +412,7 @@ class Trainer:
 
         self.accelerator.end_training()
 
-    def fit(self):
-        self.prepare_dataset()
-        self.prepare_trainable_parameters()
-        self.prepare_optimizer()
-        self.prepare_for_training()
-        self.prepare_trackers()
-        self.train()
-
-    def compute_loss(self, batch, vae_stream, step=0):
+    def compute_loss(self, batch, vae_stream):
         # Convert videos and images to latent space
         pixel_values = batch["pixel_values"].to(self.weight_dtype)
         pixel_latents = self.encode_video(pixel_values, vae_stream, self.vae.to(self.accelerator.device), self.args.vae_mini_batch, self.weight_dtype)
@@ -568,9 +439,9 @@ class Trainer:
             self.text_image_encoding_pipeline = self.text_image_encoding_pipeline.to("cpu")
             torch.cuda.empty_cache()
 
-        #sigmas = self.noise_scheduler.sample_for(pixel_latents).to(self.weight_dtype)
-        dummy_for_sampling = torch.zeros(pixel_latents.shape[0], pixel_latents.shape[2], 1, device=pixel_latents.device)
-        sigmas = self.noise_scheduler.sample_for(dummy_for_sampling)
+        sigmas, _ = self.noise_scheduler.sample(
+            pixel_latents.shape[0], pixel_latents.device
+        )
         sigmas = sigmas.unsqueeze(1).repeat(1, pixel_latents.shape[2]) # [b, f]
         sigmas[:, :1] *= 0.01
         
@@ -677,19 +548,6 @@ class Trainer:
 
             return decoded.to(weight_dtype)
 
-
-    @staticmethod
-    def get_sigmas(noise_scheduler, timesteps, n_dim=4, dtype=torch.float32, device=''):
-        sigmas = noise_scheduler.sigmas.to(device=device, dtype=dtype)
-        schedule_timesteps = noise_scheduler.timesteps.to(device)
-        timesteps = timesteps.to(device)
-        step_indices = [(schedule_timesteps == t).nonzero().item() for t in timesteps]
-
-        sigma = sigmas[step_indices].flatten()
-        while len(sigma.shape) < n_dim:
-            sigma = sigma.unsqueeze(-1)
-        return sigma
-
     def __prepare_saving_loading_hooks(self):
         def save_model_hook(models, weights, output_dir):
             if self.accelerator.is_main_process:
@@ -700,7 +558,11 @@ class Trainer:
                         type(unwrap_model(self.accelerator, self.transformer))
                     ):
                         unwrapped_model_state = unwrap_model(self.accelerator, model).state_dict()
-                        lora_state_dict = {k: unwrapped_model_state[k] for k in unwrapped_model_state.keys() if k in self.trainable_names}
+                        lora_state_dict = {
+                            k: unwrapped_model_state[k]
+                            for k in unwrapped_model_state.keys()
+                            if "lora" in k
+                        }
                         save_file(
                                 lora_state_dict,
                                 os.path.join(output_dir, "transformer_lora.safetensors")
@@ -784,6 +646,7 @@ class Trainer:
         pil_image = Image.fromarray(img)
         return pil_image
 
+    @torch.no_grad()
     def log_validation(
         self,
         pipeline,
@@ -798,7 +661,6 @@ class Trainer:
             f"Running validation... \n Generating  images with prompt:"
             f" {args.validation_prompt}."
         )
-        # 解包所有模型组件
         for name, module in pipeline.components.items():
             if hasattr(module, 'module'):
                 pipeline.components[name] = accelerator.unwrap_model(module)
@@ -826,8 +688,8 @@ class Trainer:
         torch.cuda.empty_cache()
         free_memory(accelerator.device)
 
-if __name__ == '__main__':
-    from src.trainers.schemas import parse_args
+if __name__ == "__main__":
+    from src.utils.schemas import parse_args
     args = parse_args()
     trainer = Trainer(args)
     trainer.fit()

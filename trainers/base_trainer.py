@@ -1,14 +1,13 @@
-# src/trainers/base_trainer.py
-import os, sys
-import math
 import json
 import logging
+import math
+import os
+import sys
 from pathlib import Path
 
-# get current workspace
-current_file = Path(__file__)
-sys.path.append(os.path.join(current_file.parent))
-from src.constants import LOG_LEVEL, LOG_NAME
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 import torch
 from accelerate import Accelerator
@@ -147,46 +146,59 @@ class BaseTrainer:
             if resume_from_checkpoint != "latest":
                 path = os.path.basename(resume_from_checkpoint)
             else:
-                # Get the mos recent checkpoint
+                # Get the most recent checkpoint
                 dirs = os.listdir(output_dir)
                 dirs = [d for d in dirs if d.startswith("checkpoint")]
                 dirs = sorted(dirs, key=lambda x: int(x.split("-")[1]))
                 path = dirs[-1] if len(dirs) > 0 else None
 
-            resume_from_checkpoint_path = os.path.join(output_dir, path)
-
-            if not resume_from_checkpoint_path.exists():
+            if path is None:
                 logger.info(
-                    f"Checkpoint '{resume_from_checkpoint}' does not exist. Starting a new training run."
+                    f"No checkpoint found for resume_from_checkpoint={resume_from_checkpoint!r}. "
+                    "Starting a new training run."
                 )
                 initial_global_step = 0
                 global_step = 0
                 first_epoch = 0
                 resume_from_checkpoint_path = None
             else:
-                logger.info(f"Resuming from checkpoint {resume_from_checkpoint}")
-                self.accelerator.load_state(resume_from_checkpoint_path)
-                global_step = int(resume_from_checkpoint_path.name.split("-")[1])
+                resume_from_checkpoint_path = os.path.join(output_dir, path)
 
-                initial_global_step = global_step
-                first_epoch = global_step // num_update_steps_per_epoch
+                if not os.path.exists(resume_from_checkpoint_path):
+                    logger.info(
+                        f"Checkpoint path does not exist: {resume_from_checkpoint_path}. "
+                        "Starting a new training run."
+                    )
+                    initial_global_step = 0
+                    global_step = 0
+                    first_epoch = 0
+                    resume_from_checkpoint_path = None
+                else:
+                    logger.info(f"Resuming from checkpoint {resume_from_checkpoint_path}")
+                    self.accelerator.load_state(resume_from_checkpoint_path)
+                    global_step = int(os.path.basename(resume_from_checkpoint_path).split("-")[1])
+
+                    initial_global_step = global_step
+                    first_epoch = global_step // num_update_steps_per_epoch
 
         return resume_from_checkpoint_path, initial_global_step, global_step, first_epoch
 
-    def get_intermediate_ckpt_path(checkpointing_limit: int, step: int, output_dir: str) -> str:
-        # before saving state, check if this save would set us over the `checkpointing_limit`
+    def get_intermediate_ckpt_path(
+        self, checkpointing_limit: Optional[int], step: int, output_dir: str
+    ) -> str:
         if checkpointing_limit is not None:
             checkpoints = find_files(output_dir, prefix="checkpoint")
-
-            # before we save the new checkpoint, we need to have at_most `checkpoints_total_limit - 1` checkpoints
             if len(checkpoints) >= checkpointing_limit:
                 num_to_remove = len(checkpoints) - checkpointing_limit + 1
                 checkpoints_to_remove = checkpoints[0:num_to_remove]
+                logger.info(
+                    f"{len(checkpoints)} checkpoints exist, removing {len(checkpoints_to_remove)} oldest: "
+                    f"{[p.name for p in checkpoints_to_remove]}"
+                )
                 delete_files(checkpoints_to_remove)
 
-        logger.info(f"Checkpointing at step {step}")
         save_path = os.path.join(output_dir, f"checkpoint-{step}")
-        logger.info(f"Saving state to {save_path}")
+        logger.info(f"Checkpointing at step {step}, saving state to {save_path}")
         return save_path
 
     def train(self):

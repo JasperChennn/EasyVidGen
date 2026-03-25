@@ -5,19 +5,16 @@ else
     export PATH="/opt/conda/bin:$PATH"
 fi
 
-# cd /mnt/nas-data-3/hujunjun.hjj/code/wm/anyi/world/Wan-Trainer
-# conda activate conda activate /mnt/nas-data-3/hujunjun.hjj/code/wm/anyi/anaconda3/envs/videogen
-
 export NCCL_IB_DISABLE=1
 export NCCL_P2P_DISABLE=1
 export CUDA_LAUNCH_BLOCKING=1
 export TOKENIZERS_PARALLELISM=false
 NCCL_DEBUG=INFO
 
-model_name="/mnt/nas-data-3/hujunjun.hjj/code/wm/anyi/checkpoints/Wan2.2-TI2V-5B-Diffusers"
-data_path="/mnt/nas-data-3/anyi.cjt/datasets/Cakeify-Dataset/data.json"
-data_root="/mnt/nas-data-3/anyi.cjt/datasets/Cakeify-Dataset"
-output_dir="outputs/test"
+model_name="../checkpoints/Wan2.2-TI2V-5B-Diffusers"
+data_path="examples/data.json"
+data_root="."
+output_dir="tmp/train_debug_i2v_lora"
 
 
 rank=64
@@ -35,10 +32,18 @@ max_train_steps=300
 
 output_dir=${output_dir}_r${rank}
 
+# 单机多卡 + DeepSpeed ZeRO-2：使用下方 ACCELERATE_CONFIG（在仓库根目录执行本脚本）
+# 单卡调试：设 ACCELERATE_CONFIG="" 并取消注释下面「单卡」那一行 accelerate launch。
+ACCELERATE_CONFIG="config/accelerate/accelerate_2gpu_zero2.yaml"
+
 # nohup bash scripts/crouch/train_unipc.sh> logs/train_video_decouple_crouch_multi.log 2>&1 &
 PORT=$MASTER_PORT NODE_RANK=$RANK NNODES=$WORLD_SIZE \
-# When train model with multi machines, use "--config_file accelerate.yaml" instead of "--mixed_precision='bf16'".
-accelerate launch --config_file config/accelerate_no_deepspeed_single_gpu_0.yaml src/trainers/trainer_lora_i2v.py \
+if [ -n "$ACCELERATE_CONFIG" ]; then
+  # 配置里已含 mixed_precision / num_processes / DeepSpeed，勿再传 --num_processes
+  accelerate launch --config_file "$ACCELERATE_CONFIG" trainers/trainer_lora_i2v.py \
+  --pretrained_model_name_or_path="$model_name" \
+else
+  accelerate launch --num_processes=1 trainers/trainer_lora_i2v.py \
   --pretrained_model_name_or_path="$model_name" \
   --mixed_precision="bf16" \
   --vae_mini_batch=1 \
@@ -76,3 +81,4 @@ accelerate launch --config_file config/accelerate_no_deepspeed_single_gpu_0.yaml
   --noise_shift=$noise_shift \
   --rank=$rank \
   --lora_alpha=$lora_alpha
+fi

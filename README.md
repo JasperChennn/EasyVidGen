@@ -27,10 +27,12 @@ EasyVidGen is a lightweight, modular training toolkit for video generation model
 
 - [x] Project skeleton and layout
 - [x] Modular architecture
+- [x] DDP / DeepSpeed
+- [x] I2V-Lora
 
 ### 🎯 TODO
 
-- [ ] Support DeepSpeed / FSDP
+- [ ] Support  FSDP
 - [ ] One-click training for mainstream video models (e.g. Wan, LTX)
 - [ ] Training logs and monitoring
 - [ ] Multi-GPU / distributed training
