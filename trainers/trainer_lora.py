@@ -40,12 +40,12 @@ from peft import LoraConfig, get_peft_model_state_dict, set_peft_model_state_dic
 from torch.nn.attention.flex_attention import flex_attention
 from safetensors.torch import save_file, load_file
 
-from src.trainers.utils import unwrap_model, get_memory_statistics, free_memory, print_memory
+from src.utils.utils import unwrap_model, get_memory_statistics, free_memory, print_memory
 from src.datasets.dataset import VideoDataset, collate_fn
-from src.schedulers.noise_scheduler import ShiftedLogitNormalTimestepSampler
-from src.pipelines.pipeline_wan import WanPipeline
-from src.models.transformer import WanTransformer3DModel
-from src.models.lora import WanAttnProcessorLora
+from src.schedulers.shift_logit_norm_scheduler import ShiftedLogitNormTimestepSampler
+from src.pipelines.wan.pipeline_t2v import WanPipeline
+from src.models.wan.transformer import WanTransformer3DModel
+from src.models.wan.lora import WanAttnProcessorLora
 
 import torch._dynamo
 torch._dynamo.config.suppress_errors = True
@@ -190,7 +190,7 @@ class Trainer:
 
     def _init_noise_scheduler(self):
         logger.info("Initializing noise scheduler")
-        noise_scheduler = ShiftedLogitNormalTimestepSampler(shift=self.args.noise_shift, distribution_type=self.args.noise_distribution)
+        noise_scheduler = ShiftedLogitNormTimestepSampler(shift=self.args.noise_shift, distribution_type=self.args.noise_distribution)
 
         self.noise_scheduler = noise_scheduler
 
@@ -478,19 +478,19 @@ class Trainer:
                             self.accelerator.save_state(save_path)
                             logger.info(f"Saved state to {save_path}")
 
-                        if global_step % self.args.validation_epochs == 0 and self.accelerator.is_main_process:
-                            # self.accelerator.wait_for_everyone()
-                            pipe = WanPipeline.from_pretrained(
-                                self.args.pretrained_model_name_or_path,
-                                vae=self.accelerator.unwrap_model(self.vae),
-                                transformer=self.accelerator.unwrap_model(self.transformer),
-                                text_encoder=self.accelerator.unwrap_model(self.text_image_encoding_pipeline.text_encoder),
-                                torch_dtype=self.weight_dtype,
-                                local_files_only=True,
-                            )
-                            pipeline_args = {"prompt": self.args.validation_prompt, "num_frames": self.args.video_sample_n_frames, "height":self.args.video_sample_height, "width":self.args.video_sample_width, "guidance_scale":5.0}
-                            with torch.no_grad():
-                                self.log_validation(pipe, self.accelerator, self.args, global_step, pipeline_args=pipeline_args)
+                    if global_step % self.args.validation_epochs == 0 and self.accelerator.is_main_process:
+                        # self.accelerator.wait_for_everyone()
+                        pipe = WanPipeline.from_pretrained(
+                            self.args.pretrained_model_name_or_path,
+                            vae=self.accelerator.unwrap_model(self.vae),
+                            transformer=self.accelerator.unwrap_model(self.transformer),
+                            text_encoder=self.accelerator.unwrap_model(self.text_image_encoding_pipeline.text_encoder),
+                            torch_dtype=self.weight_dtype,
+                            local_files_only=True,
+                        )
+                        pipeline_args = {"prompt": self.args.validation_prompt, "num_frames": self.args.video_sample_n_frames, "height":self.args.video_sample_height, "width":self.args.video_sample_width, "guidance_scale":5.0}
+                        with torch.no_grad():
+                            self.log_validation(pipe, self.accelerator, self.args, global_step, pipeline_args=pipeline_args)
 
                 logs = {"loss": loss.detach().item(), "lr": self.lr_scheduler.get_last_lr()[0]}
                 progress_bar.set_postfix(**logs)
@@ -526,9 +526,8 @@ class Trainer:
         self.prepare_trackers()
         self.train()
 
-    def compute_loss(self, batch, vae_stream, step=0):
+    def compute_loss(self, batch, vae_stream):
         # Convert videos and images to latent space
-        # import pdb; pdb.set_trace()
         pixel_values = batch["pixel_values"].to(self.weight_dtype)
         pixel_latents = self.encode_video(pixel_values, vae_stream, self.vae.to(self.accelerator.device), self.args.vae_mini_batch, self.weight_dtype)
 
@@ -557,15 +556,8 @@ class Trainer:
             self.text_image_encoding_pipeline= self.text_image_encoding_pipeline.to("cpu")
             torch.cuda.empty_cache()
 
-        #sigmas = self.noise_scheduler.sample_for(pixel_latents).to(self.weight_dtype)
-        dummy_for_sampling = torch.zeros(pixel_latents.shape[0], pixel_latents.shape[2], 1, device=pixel_latents.device)
-        sigmas = self.noise_scheduler.sample_for(dummy_for_sampling)
+        sigmas = self.noise_scheduler.sample(batch_size=bsz, device=self.accelerator.device)
         timesteps = torch.round(sigmas * 1000.0).long()
-
-        while len(sigmas.shape) < pixel_latents.ndim:
-            sigmas = sigmas.unsqueeze(-1)
-
-        pixel_latents = pixel_latents.to(sigmas.dtype)
 
         noise = torch.randn_like(
             pixel_latents, 
@@ -591,87 +583,6 @@ class Trainer:
         loss = loss.mean()
         return loss
 
-    @staticmethod
-    def encode_video(pixel_values, vae_stream, vae, vae_mini_batch, weight_dtype):
-        with torch.no_grad():
-            # This way is quicker when batch grows up
-            def _slice_vae(pixel_values):
-                bs = vae_mini_batch
-                new_pixel_values = []
-                for i in range(0, pixel_values.shape[0], bs):
-                    pixel_values_bs = pixel_values[i : i + bs]
-                    pixel_values_bs = vae.encode(pixel_values_bs).latent_dist
-                    pixel_values_bs = pixel_values_bs.sample()
-                    new_pixel_values.append(pixel_values_bs)
-                return torch.cat(new_pixel_values, dim = 0)
-            if vae_stream is not None:
-                vae_stream.wait_stream(torch.cuda.current_stream())
-                with torch.cuda.stream(vae_stream):
-                    latents = _slice_vae(pixel_values)
-            else:
-                latents = _slice_vae(pixel_values)
-
-            latents_mean = (
-                torch.tensor(vae.config.latents_mean)
-                .view(1, vae.config.z_dim, 1, 1, 1)
-                .to(latents.device, latents.dtype)
-            )
-            latents_std = 1.0 / torch.tensor(vae.config.latents_std).view(1, vae.config.z_dim, 1, 1, 1).to(
-                latents.device, latents.dtype
-            )
-
-            latents = (latents - latents_mean) * latents_std
-        return latents.to(weight_dtype)
-
-    @staticmethod
-    def decode_video(latents, vae_stream, vae, vae_mini_batch, weight_dtype):
-        with torch.no_grad():
-            # 定义切片解码函数
-            def _slice_vae_decode(latents):
-                bs = vae_mini_batch
-                decoded_frames = []
-                for i in range(0, latents.shape[0], bs):
-                    latents_bs = latents[i : i + bs]
-                    latents_mean = (
-                        torch.tensor(vae.config.latents_mean)
-                        .view(1, vae.config.z_dim, 1, 1, 1)
-                        .to(latents_bs.device, latents_bs.dtype)
-                    )
-                    latents_std = 1.0 / torch.tensor(vae.config.latents_std).view(
-                        1, vae.config.z_dim, 1, 1, 1
-                    ).to(latents_bs.device, latents_bs.dtype)
-                    
-                    
-                    latents_bs = latents_bs / latents_std + latents_mean
-                    
-                    # 解码
-                    decoded = vae.decode(latents_bs).sample
-                    decoded_frames.append(decoded)
-                
-                return torch.cat(decoded_frames, dim=0)
-
-            # 使用CUDA流处理
-            if vae_stream is not None:
-                vae_stream.wait_stream(torch.cuda.current_stream())
-                with torch.cuda.stream(vae_stream):
-                    decoded = _slice_vae_decode(latents)
-            else:
-                decoded = _slice_vae_decode(latents)
-
-            return decoded.to(weight_dtype)
-
-
-    @staticmethod
-    def get_sigmas(noise_scheduler, timesteps, n_dim=4, dtype=torch.float32, device=''):
-        sigmas = noise_scheduler.sigmas.to(device=device, dtype=dtype)
-        schedule_timesteps = noise_scheduler.timesteps.to(device)
-        timesteps = timesteps.to(device)
-        step_indices = [(schedule_timesteps == t).nonzero().item() for t in timesteps]
-
-        sigma = sigmas[step_indices].flatten()
-        while len(sigma.shape) < n_dim:
-            sigma = sigma.unsqueeze(-1)
-        return sigma
 
     def __prepare_saving_loading_hooks(self):
         def save_model_hook(models, weights, output_dir):
@@ -695,52 +606,9 @@ class Trainer:
                     # make sure to pop weight so that corresponding model is not saved again
                     if weights:
                         weights.pop()
-
-        def load_model_hook(models, input_dir):
-            transformer_ = None
-
-            if not self.accelerator.distributed_type == DistributedType.DEEPSPEED:
-                while len(models) > 0:
-                    model = models.pop()
-
-                    if isinstance(
-                        unwrap_model(self.accelerator, model), 
-                        type(unwrap_model(self.accelerator, self.transformer))
-                    ):
-                        transformer_ = model  # noqa: F841
-                    else:
-                        raise ValueError(f"unexpected save model: {unwrap_model(self.accelerator, model).__class__}")
-            else:
-                transformer_ = WanTransformer3DModel.from_pretrained(
-                    self.args.pretrained_model_name_or_path, subfolder="transformer"
-                )
-                transformer_.add_adapter(transformer_lora_config)
-            
-            lora_state_dict = WanPipeline.lora_state_dict(input_dir)
-
-            transformer_state_dict = {
-                f'{k.replace("transformer.", "")}': v for k, v in lora_state_dict.items() if k.startswith("transformer.")
-            }
-            transformer_state_dict = convert_unet_state_dict_to_peft(transformer_state_dict)
-            incompatible_keys = set_peft_model_state_dict(transformer_, transformer_state_dict, adapter_name="default")
-            if incompatible_keys is not None:
-                # check only for unexpected keys
-                unexpected_keys = getattr(incompatible_keys, "unexpected_keys", None)
-                if unexpected_keys:
-                    logger.warning(
-                        f"Loading adapter weights from state_dict led to unexpected keys not found in the model: "
-                        f" {unexpected_keys}. "
-                    )
-
-            # Make sure the trainable params are in float32. This is again needed since the base models
-            # are in `weight_dtype`. More details:
-            # https://github.com/huggingface/diffusers/pull/6514#discussion_r1449796804
-            if args.mixed_precision == "fp16":
-                # only upcast trainable parameters (LoRA) into fp32
-                cast_training_params([transformer_])
-
+        ## TODO: add load model hook
         self.accelerator.register_save_state_pre_hook(save_model_hook)
-        self.accelerator.register_load_state_pre_hook(load_model_hook)
+        # self.accelerator.register_load_state_pre_hook(load_model_hook)
 
     def tensor_to_pil(self, src_img_tensor):
         """
@@ -767,6 +635,7 @@ class Trainer:
         pil_image = Image.fromarray(img)
         return pil_image
 
+    @torch.no_grad()
     def log_validation(
         self,
         pipeline,
@@ -790,6 +659,9 @@ class Trainer:
         prompts = args.validation_prompt.split(self.args.validation_prompt_separator)
 
         negative_prompt = "Bright tones, overexposed, static, blurred details, subtitles, style, works, paintings, images, static, overall gray, worst quality, low quality, JPEG compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, misshapen limbs, fused fingers, still picture, messy background, three legs, many people in the background, walking backwards"
+        rank_id = getattr(accelerator, "process_index", getattr(accelerator, "local_process_index", 0))
+        validation_dir = os.path.join(args.validation_dir, f"step_{step:06d}")
+        os.makedirs(validation_dir, exist_ok=True)
         for prompt in prompts:
             generator = torch.Generator(device=accelerator.device).manual_seed(args.seed) if args.seed is not None else None
             pipeline_args["prompt"] = prompt
@@ -800,11 +672,11 @@ class Trainer:
             ).frames[0]
             from diffusers.utils import export_to_video
             if pipeline_args['num_frames'] > 1:
-                export_to_video(video, os.path.join(args.validation_dir, f"{step}-{prompt.replace(' ', '_')[:20]}.mp4"))
+                export_to_video(video, os.path.join(validation_dir, f"{rank_id}-{step}-{prompt.replace(' ', '_')[:20]}.mp4"))
             else:
                 from PIL import Image
                 image = Image.fromarray((video[0] * 255).astype(np.uint8))
-                image.save(os.path.join(args.validation_dir, f"{step}-{prompt.replace(' ', '_')[:30]}.png"))
+                image.save(os.path.join(validation_dir, f"{rank_id}-{step}-{prompt.replace(' ', '_')[:30]}.png"))
         del pipeline
         torch.cuda.empty_cache()
         free_memory(accelerator.device)

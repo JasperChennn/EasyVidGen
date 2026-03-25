@@ -14,9 +14,7 @@ from PIL import Image
 from diffusers.utils import export_to_video, load_image
 
 from diffusers import AutoencoderKLWan, WanTransformer3DModel
-from src.pipelines.pipeline_i2v import WanImageToVideoPipeline
-# from src.models.transformer import WanTransformer3DModel
-
+from src.pipelines.wan.pipeline_i2v import WanImageToVideoPipeline
 
 def _init_models(model_name, device='cuda'):
     transformer = WanTransformer3DModel.from_pretrained(

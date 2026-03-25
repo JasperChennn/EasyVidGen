@@ -408,7 +408,7 @@ class WanTrainer(BaseTrainer):
             torch.cuda.empty_cache()
 
         # sample timesteps from noise_scheduler
-        sigmas = self.noise_scheduler.sample(len(prompts), self.accelerator.device)
+        sigmas, _ = self.noise_scheduler.sample(len(prompts), self.accelerator.device)
         sigmas = sigmas.unsqueeze(1).repeat(1, pixel_latents.shape[2]) # [b, f]
         sigmas[:, :1] *= 0.01
         

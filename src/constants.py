@@ -1,2 +1,3 @@
-LOG_NAME = "trainer"
+LOG_NAME = "EasyVidGen"
 LOG_LEVEL = "INFO"
+DEBUG=False

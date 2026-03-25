@@ -1,9 +1,14 @@
 # src/trainers/base_trainer.py
-import os
+import os, sys
 import math
 import json
 import logging
 from pathlib import Path
+
+# get current workspace
+current_file = Path(__file__)
+sys.path.append(os.path.join(current_file.parent))
+from src.constants import LOG_LEVEL, LOG_NAME
 
 import torch
 from accelerate import Accelerator
