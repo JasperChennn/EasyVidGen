@@ -1,0 +1,15 @@
+*__pycache__*
+
+.vscode/
+checkpoints/
+
+# 训练日志
+logs/
+*.log
+tensorboard/
+runs/
+
+# 缓存数据
+.cache/
+*.cache
+.huggingface/
