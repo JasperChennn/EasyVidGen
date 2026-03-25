@@ -32,11 +32,22 @@ EasyVidGen is a lightweight, modular training toolkit for video generation model
 
 ### 🎯 TODO
 
-- [ ] Support  FSDP
-- [ ] One-click training for mainstream video models (e.g. Wan, LTX)
+- [ ] Support FSDP
+- [ ] One-click training for more mainstream video or image generation models 
+   - [x] Wan
+   - [ ] CogVideoX
+   - [ ] HunYuanVideo
+   - [ ] Flux
+   - [ ] LTX
+   - [ ] SANA-Video
 - [ ] Training logs and monitoring
-- [ ] Multi-GPU / distributed training
 - [ ] Plugin-style custom modules
+
+### Downstream
+- [ ] Sparse Attention for long video generation
+- [ ] Lora-Moe
+- [ ] Self-Forcing
+- [ ] GRPO
 
 ### 🔮 Long term
 
