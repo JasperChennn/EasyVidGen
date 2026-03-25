@@ -46,8 +46,10 @@ EasyVidGen is a lightweight, modular training toolkit for video generation model
 ### Downstream
 - [ ] Sparse Attention for long video generation
 - [ ] Lora-Moe
+- [ ] MemCompression
 - [ ] Self-Forcing
 - [ ] GRPO
+- [ ] Tiny WAM(World Action Model)
 
 ### 🔮 Long term
 
