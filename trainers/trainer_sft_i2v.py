@@ -41,12 +41,12 @@ from peft import LoraConfig, get_peft_model_state_dict, set_peft_model_state_dic
 # from torch.nn.attention.flex_attention import flex_attention
 from safetensors.torch import save_file, load_file
 
-from src.trainers.utils import unwrap_model, get_memory_statistics, free_memory, print_memory
-from src.datasets.dataset import VideoDataset, collate_fn
-from src.schedulers.noise_scheduler import ShiftedLogitNormalTimestepSampler
-from src.pipelines.pipeline_wan_i2v import WanPipeline
-from src.models.transformer import WanTransformer3DModel
-from src.models.lora import WanAttnProcessorLora
+from easyvid.utils.utils import unwrap_model, get_memory_statistics, free_memory, print_memory
+from easyvid.datasets.dataset import VideoDataset, collate_fn
+from easyvid.schedulers.shift_logit_norm_scheduler import ShiftedLogitNormTimestepSampler
+from easyvid.pipelines.wan.pipeline_i2v import WanImageToVideoPipeline
+from easyvid.models.wan.transformer import WanTransformer3DModel
+from easyvid.models.wan.lora import WanAttnProcessorLora
 
 import torch._dynamo
 torch._dynamo.config.suppress_errors = True
@@ -172,7 +172,7 @@ class Trainer:
     # Text Encoder
     def _load_text_image_encoder(self, weight_dtype):
         # Create a pipeline for text encoding. We will move this pipeline to GPU/CPU as needed.
-        text_image_encoding_pipeline = WanPipeline.from_pretrained(
+        text_image_encoding_pipeline = WanImageToVideoPipeline.from_pretrained(
             self.args.pretrained_model_name_or_path, 
             transformer=None, vae=None, torch_dtype=weight_dtype
         )
@@ -191,7 +191,7 @@ class Trainer:
 
     def _init_noise_scheduler(self):
         logger.info("Initializing noise scheduler")
-        noise_scheduler = ShiftedLogitNormalTimestepSampler(shift=self.args.noise_shift, distribution_type=self.args.noise_distribution)
+        noise_scheduler = ShiftedLogitNormTimestepSampler(shift=self.args.noise_shift, distribution_type=self.args.noise_distribution)
 
         self.noise_scheduler = noise_scheduler
 

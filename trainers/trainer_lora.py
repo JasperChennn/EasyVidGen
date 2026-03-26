@@ -40,12 +40,12 @@ from peft import LoraConfig, get_peft_model_state_dict, set_peft_model_state_dic
 from torch.nn.attention.flex_attention import flex_attention
 from safetensors.torch import save_file, load_file
 
-from src.utils.utils import unwrap_model, get_memory_statistics, free_memory, print_memory
-from src.datasets.dataset import VideoDataset, collate_fn
-from src.schedulers.shift_logit_norm_scheduler import ShiftedLogitNormTimestepSampler
-from src.pipelines.wan.pipeline_t2v import WanPipeline
-from src.models.wan.transformer import WanTransformer3DModel
-from src.models.wan.lora import WanAttnProcessorLora
+from easyvid.utils.utils import unwrap_model, get_memory_statistics, free_memory, print_memory
+from easyvid.datasets.dataset import VideoDataset, collate_fn
+from easyvid.schedulers.shift_logit_norm_scheduler import ShiftedLogitNormTimestepSampler
+from easyvid.pipelines.wan.pipeline_t2v import WanPipeline
+from easyvid.models.wan.transformer import WanTransformer3DModel
+from easyvid.models.wan.lora import WanAttnProcessorLora
 
 import torch._dynamo
 torch._dynamo.config.suppress_errors = True

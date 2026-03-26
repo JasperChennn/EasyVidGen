@@ -43,12 +43,12 @@ from diffusers.training_utils import (
 from torch.nn.attention.flex_attention import flex_attention
 from safetensors.torch import save_file, load_file
 
-from src.utils.utils import unwrap_model, get_memory_statistics, free_memory, print_memory
-from src.datasets.dataset import VideoDataset, collate_fn
-from src.schedulers.shift_logit_norm_scheduler import ShiftedLogitNormTimestepSampler
-from src.pipelines.wan.pipeline_i2v import WanImageToVideoPipeline
-from src.models.wan.transformer import WanTransformer3DModel
-from src.models.wan.lora import WanAttnProcessorLora
+from easyvid.utils.utils import unwrap_model, get_memory_statistics, free_memory, print_memory
+from easyvid.datasets.dataset import VideoDataset, collate_fn
+from easyvid.schedulers.shift_logit_norm_scheduler import ShiftedLogitNormTimestepSampler
+from easyvid.pipelines.wan.pipeline_i2v import WanImageToVideoPipeline
+from easyvid.models.wan.transformer import WanTransformer3DModel
+from easyvid.models.wan.lora import WanAttnProcessorLora
 from trainers.base_trainer import BaseTrainer
 
 import torch._dynamo

@@ -16,7 +16,7 @@ from accelerate.utils import DistributedType, ProjectConfiguration, set_seed
 import transformers
 import diffusers
 from typing import List, Optional, Tuple, Union, Any
-from src.utils.file_utils import delete_files, find_files
+from easyvid.utils.file_utils import delete_files, find_files
 
 logger = get_logger(__name__, log_level="INFO")
 

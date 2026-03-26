@@ -28,13 +28,13 @@ from diffusers.training_utils import (
 
 from safetensors.torch import save_file, load_file
 
-from src.utils.utils import unwrap_model, get_memory_statistics, free_memory
-from src.datasets.dataset import VideoDataset, collate_fn
-from src.schedulers.noise_scheduler import ShiftedLogitNormalTimestepSampler
-from src.pipelines.wan.pipeline_i2v import WanImageToVideoPipeline
-from src.models.wan.transformer import WanTransformer3DModel
-from src.models.wan.lora import WanAttnProcessorLora
-from src.models.wan.vae_utils import encode_to_latents, decode_to_videos
+from easyvid.utils.utils import unwrap_model, get_memory_statistics, free_memory
+from easyvid.datasets.dataset import VideoDataset, collate_fn
+from easyvid.schedulers.noise_scheduler import ShiftedLogitNormalTimestepSampler
+from easyvid.pipelines.wan.pipeline_i2v import WanImageToVideoPipeline
+from easyvid.models.wan.transformer import WanTransformer3DModel
+from easyvid.models.wan.lora import WanAttnProcessorLora
+from easyvid.models.wan.vae_utils import encode_to_latents, decode_to_videos
 from trainers.base_trainer import BaseTrainer
 
 import torch._dynamo
