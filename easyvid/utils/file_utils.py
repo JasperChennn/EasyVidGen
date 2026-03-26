@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Union
 
 from accelerate.logging import get_logger
 
-from src.constants import LOG_LEVEL, LOG_NAME
+from easyvid.constants import LOG_LEVEL, LOG_NAME
 
 
 logger = get_logger(LOG_NAME, LOG_LEVEL)

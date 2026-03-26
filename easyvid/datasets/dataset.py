@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from decord import VideoReader
 from PIL import Image
-from torch.utils.data import Dataset
+from torch.utils.data import BatchSampler, Sampler, Dataset
 import torchvision.transforms as transforms
 from torchvision.transforms import InterpolationMode
 from torchvision.transforms.functional import crop, resize
@@ -208,6 +208,27 @@ class VideoDataset(Dataset):
 
     def __len__(self) -> int:
         return len(self.dataset)
+
+class RepeatLastBatchSampler(Sampler):
+    def __init__(self, data_source, batch_size):
+        self.data_source = data_source
+        self.batch_size = batch_size
+        
+        self.num_samples = len(self.data_source)
+        self.num_batches = (self.num_samples + self.batch_size - 1) // self.batch_size
+        self.total_size = self.num_batches * self.batch_size
+        self.num_to_add = self.total_size - self.num_samples
+
+    def __iter__(self):
+        indices = list(range(self.num_samples))
+            
+        if self.num_to_add > 0:
+            additional_indices = [0] * self.num_to_add
+            indices.extend(additional_indices)
+        return iter(indices)
+
+    def __len__(self):
+        return self.total_size
 
 
 def collate_fn(examples):

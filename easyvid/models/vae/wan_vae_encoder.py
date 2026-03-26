@@ -34,8 +34,9 @@ def _load_wan_vae(model_path, *, subfolder: str = "vae"):
 
 
 class VAEEncoder:
-    def __init__(self, model_path):
+    def __init__(self, model_path, device="cuda", dtype=torch.bfloat16):
         self.model = _load_wan_vae(model_path)
+        self.model.to(device, dtype)
         self.model.eval()
         self.model.requires_grad_(False)
 

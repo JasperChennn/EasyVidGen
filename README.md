@@ -13,9 +13,11 @@ EasyVidGen is a lightweight, modular training toolkit for video generation model
 ## 🚀 Features
 
 - **Modular**: Data loading, training, and inference are decoupled.
-- **Ready to run**: Minimal config; start training with one command.
+- **Ready to run**: Minimal config; fast training.
 - **Ecosystem-friendly**: Built on Accelerate and common video-generation stacks.
 - **Lean**: Fewer dependencies, focused on training efficiency.
+- **Highly extensible**: Supports a wide range of video generation downstream tasks.
+
 
 ---
 
@@ -105,9 +107,13 @@ python inference/inference_i2v.py \
   --device cuda
 ```
 
-### Training
+### Lora Training
 
-*(To be documented: launch commands, Accelerate / DeepSpeed configs, data layout, etc.)*
+1. download data
+```bash
+bash examples/cakeify/download.sh
+python examples/cakeify/process_data.py
+```
 
 ---
 
