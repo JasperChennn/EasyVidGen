@@ -638,6 +638,7 @@ class Trainer(BaseTrainer):
         prompts = args.validation_prompt.split(self.args.validation_prompt_separator)
         images = args.validation_images.split(":::")
         negative_prompt = "Bright tones, overexposed, static, blurred details, subtitles, style, works, paintings, images, static, overall gray, worst quality, low quality, JPEG compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, misshapen limbs, fused fingers, still picture, messy background, three legs, many people in the background, walking backwards"
+        rank_id = getattr(accelerator, "process_index", getattr(accelerator, "local_process_index", 0))
         for prompt, image_path in zip(prompts, images):
             generator = torch.Generator(device=accelerator.device).manual_seed(args.seed) if args.seed is not None else None
             pipeline_args["prompt"] = prompt
@@ -649,10 +650,10 @@ class Trainer(BaseTrainer):
                 generator=generator,
             ).frames[0]
             if pipeline_args['num_frames'] > 1:
-                export_to_video(video, os.path.join(args.validation_dir, f"{step}-{prompt.replace(' ', '_')[:20]}.mp4"))
+                export_to_video(video, os.path.join(args.validation_dir, f"rank{rank_id:02d}-{step}-{prompt.replace(' ', '_')[:20]}.mp4"))
             else:
                 image = Image.fromarray((video[0] * 255).astype(np.uint8))
-                image.save(os.path.join(args.validation_dir, f"{step}-{prompt.replace(' ', '_')[:30]}.png"))
+                image.save(os.path.join(args.validation_dir, f"rank{rank_id:02d}-{step}-{prompt.replace(' ', '_')[:30]}.png"))
         del pipeline
         torch.cuda.empty_cache()
         free_memory(accelerator.device)
