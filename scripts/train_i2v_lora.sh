@@ -80,11 +80,11 @@ TRAIN_ARGS=(
 
 if [ -n "$ACCELERATE_CONFIG" ]; then
   # 配置里已含 mixed_precision / num_processes / DeepSpeed，勿再传 --num_processes
-  accelerate launch --config_file "$ACCELERATE_CONFIG" trainers/trainer_lora_i2v.py \
+  accelerate launch --config_file "$ACCELERATE_CONFIG" trainers/trainer_lora_i2v_peft.py \
     --pretrained_model_name_or_path="$model_name" \
     "${TRAIN_ARGS[@]}"
 else
-  accelerate launch --num_processes=2 trainers/trainer_lora_i2v.py \
+  accelerate launch --num_processes=2 trainers/trainer_lora_i2v_peft.py \
     --pretrained_model_name_or_path="$model_name" \
     --mixed_precision="bf16" \
     --vae_mini_batch=1 \

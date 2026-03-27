@@ -35,7 +35,7 @@ from diffusers.training_utils import (
     compute_loss_weighting_for_sd3
 )
 
-# from peft import LoraConfig, get_peft_model_state_dict, set_peft_model_state_dict
+from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, set_peft_model_state_dict
 from torch.nn.attention.flex_attention import flex_attention
 from safetensors.torch import save_file, load_file
 
@@ -44,7 +44,6 @@ from easyvid.datasets.dataset import VideoDataset, collate_fn, RepeatLastBatchSa
 from easyvid.schedulers.shift_logit_norm_scheduler import ShiftedLogitNormTimestepSampler
 from easyvid.pipelines.wan.pipeline_i2v import WanImageToVideoPipeline
 from easyvid.models.wan.transformer import WanTransformer3DModel
-from easyvid.models.wan.lora import WanAttnProcessorLora
 from easyvid.trainer_utils.base_trainer import BaseTrainer
 
 import torch._dynamo
@@ -56,8 +55,30 @@ check_min_version("0.18.0.dev0")
 logger = get_logger(__name__, log_level="INFO")
 
 
+def _parse_lora_modules(lora_modules_arg):
+    if lora_modules_arg is None:
+        return ["q", "k", "v", "out"]
+    if isinstance(lora_modules_arg, str):
+        return [x.strip() for x in lora_modules_arg.split(",") if x.strip()]
+    return list(lora_modules_arg)
+
+
+def _lora_modules_to_peft_targets(lora_modules):
+    """Map CLI lora module names to WanAttention / PEFT target submodule names."""
+    mapping = {
+        "q": "to_q",
+        "k": "to_k",
+        "v": "to_v",
+        "out": "to_out.0",
+        "add_k": "add_k_proj",
+        "add_v": "add_v_proj",
+    }
+    targets = [mapping[m] for m in lora_modules if m in mapping]
+    return targets if targets else ["to_q", "to_k", "to_v", "to_out.0"]
+
+
 class Trainer(BaseTrainer):
-    """Wan I2V LoRA training; extends :class:`BaseTrainer` with Wan VAE / I2V pipeline and loss."""
+    """Wan I2V LoRA training (PEFT); extends :class:`BaseTrainer` with Wan VAE / I2V pipeline and loss."""
 
     def __init__(self, args):
         if args.report_to == "wandb" and args.hub_token is not None:
@@ -159,25 +180,19 @@ class Trainer(BaseTrainer):
         if self.args.gradient_checkpointing:
             self.transformer.enable_gradient_checkpointing()
 
-        # inject lora
-        attn_processors = {}
-        attn_processor_type = WanAttnProcessorLora
-        for key, value in self.transformer.attn_processors.items():
-            lora_modules = self.args.lora_modules if self.args.lora_modules else ['q', 'k', 'v', 'out']
-            attn_processor = attn_processor_type(
-                in_channels = self.transformer.config.num_attention_heads * self.transformer.config.attention_head_dim,
-                out_channels = self.transformer.config.num_attention_heads * self.transformer.config.attention_head_dim,
-                rank = self.args.rank,
-                network_alpha = self.args.lora_alpha,
-                device = self.accelerator.device,
-                dtype = self.weight_dtype,
-                lora_modules = lora_modules,
-            )
-            for name, param in attn_processor.named_parameters():
-                param.requires_grad = True
-            attn_processors[key] = attn_processor
-        self.transformer.set_attn_processor(attn_processors)
-        logger.info("Attn Processor initialized")
+        # LoRA via PEFT (inject on Linear: to_q / to_k / to_v / to_out.0, optional add_k_proj / add_v_proj)
+        lora_modules = _parse_lora_modules(self.args.lora_modules)
+        target_modules = _lora_modules_to_peft_targets(lora_modules)
+        lora_config = LoraConfig(
+            r=self.args.rank,
+            lora_alpha=self.args.lora_alpha,
+            lora_dropout=0.0,
+            bias="none",
+            target_modules=target_modules,
+        )
+        self.transformer = get_peft_model(self.transformer, lora_config)
+        self.transformer.print_trainable_parameters()
+        logger.info(f"PEFT LoRA initialized (target_modules={target_modules})")
             
 
     def prepare_optimizer(self):
@@ -215,13 +230,13 @@ class Trainer(BaseTrainer):
         else:
             optimizer_cls = torch.optim.AdamW
 
-        transformer_lora_parameters = list(filter(lambda p: p.requires_grad, self.transformer.parameters()))
-        total_params = sum(p.numel() for p in transformer_lora_parameters)
+        trainable_parameters = list(filter(lambda p: p.requires_grad, self.transformer.parameters()))
+        total_params = sum(p.numel() for p in trainable_parameters)
         logger.info(f"Total trainable parameters: {total_params/1e6:.2f}M")
 
         params_to_optimize = [
             {
-                'params': transformer_lora_parameters, 
+                'params': trainable_parameters, 
                 "lr": self.args.learning_rate
             }
         ]
@@ -551,17 +566,13 @@ class Trainer(BaseTrainer):
                         unwrap_model(self.accelerator, model), 
                         type(unwrap_model(self.accelerator, self.transformer))
                     ):
-                        unwrapped_model_state = unwrap_model(self.accelerator, model).state_dict()
-                        lora_state_dict = {
-                            k: unwrapped_model_state[k]
-                            for k in unwrapped_model_state.keys()
-                            if "lora" in k
-                        }
+                        unwrapped = unwrap_model(self.accelerator, model)
+                        lora_state_dict = get_peft_model_state_dict(unwrapped)
                         save_file(
                                 lora_state_dict,
-                                os.path.join(output_dir, "transformer_lora.safetensors")
+                                os.path.join(output_dir, "model.safetensors")
                         )
-                        logger.info(f"Saved lora to {os.path.join(output_dir, 'transformer_lora.safetensors')}")
+                        logger.info(f"Saved lora to {os.path.join(output_dir, 'model.safetensors')}")
                     else:
                         raise ValueError(f"unexpected save model: {model.__class__}")
 
@@ -597,15 +608,7 @@ class Trainer(BaseTrainer):
                 return
 
             lora_state_dict = load_file(lora_path)
-            
-            # ✅ 
-            missing_keys, unexpected_keys = transformer_.load_state_dict(lora_state_dict, strict=False)
-            
-            # if missing_keys:
-            #     logger.warning(f"Missing keys when loading LoRA: {missing_keys}")
-            if unexpected_keys:
-                logger.warning(f"Unexpected keys when loading LoRA: {unexpected_keys}")
-            
+            _ = set_peft_model_state_dict(transformer_, lora_state_dict)
             logger.info(f"Loaded LoRA weights from {lora_path}")
 
             # ✅ cast trainable params to fp32
