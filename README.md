@@ -18,6 +18,9 @@ EasyVidGen is a lightweight, modular training toolkit for video generation model
 - **Lean**: Fewer dependencies, focused on training efficiency.
 - **Highly extensible**: Supports a wide range of video generation downstream tasks.
 
+## 🚀 Updates
+
+- **2026-03-30**: self forcing->causal transformer and teacher forcing transformer.
 
 ---
 

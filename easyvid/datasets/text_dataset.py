@@ -65,13 +65,6 @@ def _count_indexed_pt_dir(folder: str) -> int:
 
 
 class TextFileDataset(Dataset):
-    """
-    Args:
-        txt_path: 一个或多个 ``.txt``；**与** ``precomputed_embeddings_path`` **二选一**。
-        text_drop_ratio: ``>0`` 时以该概率将返回的文本置为 ``""``（嵌入不变）。
-        precomputed_embeddings_path: 若设置，为目录路径；``__init__`` 只统计样本数，
-            各 ``.pt`` 在 ``__getitem__`` 中再加载。不需要 ``txt_path``。
-    """
 
     def __init__(
         self,
