@@ -6,6 +6,12 @@
 
 ---
 
+## 🤗 checkpoints
+
+| Checkpoint | Hugging Face |
+|------------|--------------|
+| **Wan2.2-TI2V-5B-4Steps-Diffusers** | [![](https://img.shields.io/badge/🤗_HuggingFace-Model-ffbd45.svg)](https://huggingface.co/Chenjt-pku/Wan2.2-TI2V-5B-4Steps-Diffusers) |
+
 ## 📋 Introduction
 
 EasyVidGen is a lightweight, modular training toolkit for video generation models. It streamlines the training workflow so you can focus on ideas instead of boilerplate—train, debug, and ship faster.
@@ -49,6 +55,7 @@ EasyVidGen is a lightweight, modular training toolkit for video generation model
 - [ ] Plugin-style custom modules
 
 ### Downstream
+- [x] DMD, Self-Forcing [60%]
 - [ ] Sparse Attention for long video generation
 - [ ] Lora-Moe
 - [ ] MemCompression
@@ -64,7 +71,7 @@ EasyVidGen is a lightweight, modular training toolkit for video generation model
 
 ---
 
-## Quick start
+## ⚡ Quick start
 
 ### Environment
 
@@ -88,24 +95,39 @@ EasyVidGen is a lightweight, modular training toolkit for video generation model
 
 ### Inference
 
-Image-to-video example — adjust `model_name`, `CUDA_VISIBLE_DEVICES`, etc. inside the shell script if needed:
+Image-to-video — see `inference/inference_i2v.py` for all flags.
 
-```bash
-bash inference/inference_i2v.sh
-```
-
-Or call Python directly (see `inference/inference_i2v.py` for all flags):
+**Full checkpoint** (`Wan2.2-TI2V-5B-Diffusers`, multi-step):
 
 ```bash
 python inference/inference_i2v.py \
   --model_name checkpoints/Wan2.2-TI2V-5B-Diffusers \
   --image_path examples/demo.jpg \
   --prompt "The dog is walking happily in the road." \
-  --num_frames 49 \
+  --num_frames 81 \
   --height 704 \
   --width 1280 \
   --num_inference_steps 30 \
   --output tmp/demo.mp4 \
+  --fps 16 \
+  --device cuda
+```
+
+**4-step distilled checkpoint** (`Wan2.2-TI2V-5B-4Steps-Diffusers`，4 steps)
+
+
+
+```bash
+python inference/inference_i2v.py \
+  --model_name checkpoints/Wan2.2-TI2V-5B-4Steps-Diffusers \
+  --image_path examples/cat.JPG \
+  --prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard." \
+  --num_frames 121 \
+  --height 1280 \
+  --width 704 \
+  --num_inference_steps 4 \
+  --guidance_scale 1.0 \
+  --output tmp/demo_i2v.mp4 \
   --fps 16 \
   --device cuda
 ```
@@ -120,9 +142,27 @@ python examples/cakeify/process_data.py
 
 ---
 
-## 🤝 Contributing
+## 🤝 Acknowledgements
+
+EasyVidGen builds on open tools and research from the community. We are grateful to:
+
+- [Hugging Face Diffusers](https://github.com/huggingface/diffusers)
+- [CogVideoX](https://github.com/zai-org/CogVideo)
+- [Wan2.1](https://github.com/Wan-Video/Wan2.1)
+- [Wan2.2](https://github.com/Wan-Video/Wan2.2)
+- [CausVid](https://github.com/tianweiy/CausVid)
+- [Self-Forcing](https://github.com/guandeh17/Self-Forcing)
+- [Wan2.2-TI2V-5B-Turbo](https://github.com/quanhaol/Wan2.2-TI2V-5B-Turbo)
 
 We welcome bug reports, feature ideas, documentation improvements, and new modules.
+
+## 📚 Contact
+If you have any suggestions or find our work helpful, feel free to contact us
+
+Email: cjt@stu.pku.edu.cn
+
+If you find our work useful, <b>please consider giving a star ⭐ to this github repository and citing it</b>:
+
 
 ## 📄 License
 

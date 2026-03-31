@@ -88,6 +88,7 @@ class WanT2VCausalPipeline(WanPipeline):
         dtype: torch.dtype,
         device: torch.device,
         frame_seq_length: int,
+        num_latent_frames: int = 31, # 默认 21 帧，与 Wan2.2 ti2v 一致
     ) -> None:
         if self.transformer is None:
             raise ValueError("transformer is required for WanT2VCausalPipeline.")
@@ -96,10 +97,8 @@ class WanT2VCausalPipeline(WanPipeline):
         num_heads = cfg.num_attention_heads
         head_dim = cfg.attention_head_dim
         local_attn = getattr(cfg, "local_attn_size", -1)
-        if local_attn != -1:
-            kv_cache_size = local_attn * frame_seq_length
-        else:
-            kv_cache_size = 32760
+        local_attn = num_latent_frames if local_attn == -1 else local_attn
+        kv_cache_size = local_attn * frame_seq_length
 
         from easyvid.models.wan.transformer_casual import WanTransformer3DModel as WanTransformer3DCasual
 

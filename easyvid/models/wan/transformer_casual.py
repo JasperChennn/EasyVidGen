@@ -1243,8 +1243,9 @@ class WanTransformer3DModel(
                     )
             ts_seq_len = 2 * post_patch_num_frames
             timestep = torch.cat([aug_t, noisy_t], dim=1).flatten()
-        elif timestep.ndim == 2:
-            ts_seq_len = timestep.shape[1]
+        elif timestep.ndim == 2 and timestep.shape[1] == post_patch_num_frames:
+            ts_seq_len = post_patch_num_frames * frame_seqlen
+            timestep = timestep.unsqueeze(-1).expand(batch_size, -1, frame_seqlen)
             timestep = timestep.flatten()
         else:
             ts_seq_len = None

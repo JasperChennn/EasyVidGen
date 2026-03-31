@@ -1,5 +1,35 @@
 import os
 import argparse
+from pathlib import Path
+from argparse import Namespace
+
+
+def merge_yaml_into_args(args: Namespace, yaml_path: str) -> None:
+    """
+    将 YAML 中的键值合并到 ``args``。根节点须为 mapping。
+    与已有属性同名时，以 YAML 中的值为准（覆盖命令行解析结果）。
+    """
+    try:
+        import yaml
+    except ImportError as e:
+        raise ImportError(
+            "使用 --custom_model_config 需要安装 PyYAML: pip install pyyaml"
+        ) from e
+
+    path = Path(yaml_path).expanduser()
+    if not path.is_file():
+        raise FileNotFoundError(f"custom_model_config 不是有效文件: {path}")
+
+    with path.open("r", encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+
+    if data is None:
+        return
+    if not isinstance(data, dict):
+        raise ValueError(f"custom_model_config YAML 根节点须为 mapping，当前为 {type(data).__name__}")
+
+    for key, value in data.items():
+        setattr(args, key, value)
 
 
 def parse_args():
@@ -421,6 +451,12 @@ def parse_args():
     parser.add_argument("--use_ema", action="store_true", help="Use EMA")
     parser.add_argument("--ema_decay", type=float, default=0.999, help="EMA decay rate")
     parser.add_argument("--ema_update_after_step", type=int, default=0, help="Start EMA after N steps")
+    parser.add_argument(
+        "--ema_start_step",
+        type=int,
+        default=0,
+        help="Allocate generator EMA (shadow weights) only when global_step reaches this value; 0 means from step 0.",
+    )
     parser.add_argument("--ema_update_every", type=int, default=1, help="Update EMA every N steps")
     parser.add_argument("--foreach_ema", action="store_true", help="Use foreach for EMA updates (faster)") 
     parser.add_argument(
@@ -434,9 +470,18 @@ def parse_args():
     parser.add_argument("--noise_shift", type=float, default=4.0)
     parser.add_argument("--lora_modules", type=str, default=None, help="use lora in q, k, v, o?, ")
     parser.add_argument("--do_validation", type=str, default='true', choices=['true', 'false'])
+    parser.add_argument(
+        "--custom_model_config",
+        type=str,
+        default=None,
+        help="指向 YAML 配置文件的路径；解析后会合并到 args，同名键以 YAML 为准。",
+    )
     args = parser.parse_args()
     env_local_rank = int(os.environ.get("LOCAL_RANK", -1))
     if env_local_rank != -1 and env_local_rank != args.local_rank:
         args.local_rank = env_local_rank
+
+    if args.custom_model_config:
+        merge_yaml_into_args(args, args.custom_model_config)
 
     return args
