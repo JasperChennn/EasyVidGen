@@ -11,6 +11,7 @@
 | Checkpoint | Hugging Face |
 |------------|--------------|
 | **Wan2.2-TI2V-5B-4Steps-Diffusers** | [![](https://img.shields.io/badge/🤗_HuggingFace-Model-ffbd45.svg)](https://huggingface.co/Chenjt-pku/Wan2.2-TI2V-5B-4Steps-Diffusers) |
+| **Wan2.1-1.3B-Self-Forcing-Diffusers** | [![](https://img.shields.io/badge/🤗_HuggingFace-Model-ffbd45.svg)](https://huggingface.co/Chenjt-pku/Wan2.1-1.3B-Self-Forcing-Diffusers**) |
 
 ## 📋 Introduction
 

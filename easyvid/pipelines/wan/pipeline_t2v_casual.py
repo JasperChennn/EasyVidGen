@@ -46,7 +46,7 @@ class WanT2VCausalPipeline(WanPipeline):
         transformer_2=None,
         boundary_ratio=None,
         expand_timesteps=False,
-        num_frame_per_block: int = 1,
+        num_frame_per_block: int = 3,
         independent_first_frame: bool = False,
         context_noise: float = 0.0,
     ):
@@ -449,6 +449,7 @@ class WanT2VCausalPipeline(WanPipeline):
             if index < len(denoising_step_list) - 1:
                 next_t = denoising_step_list[index + 1]
                 next_t_val = int(next_t)
+                x0_pred = noisy - denoised_pred * (t_val / 1000.0)
                 flat = denoised_pred.flatten(0, 1)
                 rnd = torch.randn_like(flat)
                 if hasattr(self.scheduler, "add_noise"):

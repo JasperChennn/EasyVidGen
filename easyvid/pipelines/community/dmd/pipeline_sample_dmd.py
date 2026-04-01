@@ -30,9 +30,9 @@ from easyvid.pipelines.wan.pipeline_t2v_casual import WanT2VCausalPipeline
 logger = logging.get_logger(__name__)
 
 
-class WanDMDSamplePipeline(WanT2VCausalPipeline):
+class WanSelfForcingPipeline(WanT2VCausalPipeline):
     r"""
-    因果块式 T2V 采样，带 DMD / self-forcing 常用开关。
+    因果块式 T2V 采样，带 Self-Forcing 常用开关。
 
     默认与 :class:`WanT2VCausalPipeline` 等价；设置 ``random_exit_per_block=True`` 时块内去噪在随机子步停止。
     """
@@ -47,7 +47,7 @@ class WanDMDSamplePipeline(WanT2VCausalPipeline):
         transformer_2=None,
         boundary_ratio=None,
         expand_timesteps=False,
-        num_frame_per_block: int = 21,
+        num_frame_per_block: int = 3,
         independent_first_frame: bool = False,
         context_noise: float = 0.0,
         context_noise_inject: bool = False,
@@ -160,12 +160,12 @@ class WanDMDSamplePipeline(WanT2VCausalPipeline):
 
             if exit_step_index is not None and index == exit_step_index:
                 break
-
+            x0_pred = noisy - denoised_pred * (t_val / 1000.0)
             if index < len(denoising_step_list) - 1:
                 with torch.no_grad():
                     next_t = denoising_step_list[index + 1]
                     next_t_val = int(next_t)
-                    flat = denoised_pred.flatten(0, 1)
+                    flat = x0_pred.flatten(0, 1)
                     rnd = torch.randn_like(flat)
                     if hasattr(self.scheduler, "add_noise"):
                         noisy_flat = self.scheduler.add_noise(
@@ -178,7 +178,7 @@ class WanDMDSamplePipeline(WanT2VCausalPipeline):
                         noisy_flat = (1.0 - sigma) * flat + sigma * rnd
                     noisy = noisy_flat.unflatten(0, denoised_pred.shape[:2]).to(transformer_dtype)
 
-        return denoised_pred
+        return x0_pred
 
     def _context_forward(
         self,

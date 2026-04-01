@@ -17,27 +17,27 @@ from diffusers.schedulers import FlowMatchEulerDiscreteScheduler, UniPCMultistep
 from diffusers.utils import export_to_video
 from transformers import AutoTokenizer, UMT5EncoderModel
 
-from easyvid.models.wan.transformer import WanTransformer3DModel
-from easyvid.pipelines.community.dmd.pipeline_sample_dmd import WanDMDSamplePipeline
+from easyvid.models.wan.transformer_casual import WanTransformer3DModel
+from easyvid.pipelines.community.dmd.pipeline_sample_dmd import WanSelfForcingPipeline
 
 
-def _init_models(model_name, device="cuda"):
+def _init_models(model_name, device="cuda", params=None):
     dtype = torch.bfloat16
     kwargs = {"local_files_only": True}
 
     tokenizer = AutoTokenizer.from_pretrained(model_name, subfolder="tokenizer", **kwargs)
     text_encoder = UMT5EncoderModel.from_pretrained(
-        model_name, subfolder="text_encoder", torch_dtype=dtype, **kwargs
+        model_name, subfolder="text_encoder", dtype=dtype, **kwargs
     )
-    scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(
+    scheduler = UniPCMultistepScheduler.from_pretrained(
         model_name, subfolder="scheduler", shift=5.0, **kwargs
     )
     transformer = WanTransformer3DModel.from_pretrained(
         model_name, subfolder="transformer", torch_dtype=dtype, **kwargs
     )
     vae = AutoencoderKLWan.from_pretrained(model_name, subfolder="vae", torch_dtype=dtype, **kwargs)
-
-    pipeline = WanDMDSamplePipeline(
+    transformer.config.local_attn_size = params.local_attn_size
+    pipeline = WanSelfForcingPipeline(
         tokenizer=tokenizer,
         text_encoder=text_encoder,
         vae=vae,
@@ -46,10 +46,10 @@ def _init_models(model_name, device="cuda"):
         transformer_2=None,
         boundary_ratio=None,
         expand_timesteps=False,
-        num_frame_per_block=31,
-        independent_first_frame=False,
+        num_frame_per_block=params.num_frame_per_block,
+        independent_first_frame=params.independent_first_frame,
         context_noise=0.0,
-        context_noise_inject=False,
+        context_noise_inject=params.context_noise_inject,
         same_step_across_blocks=False,
         last_step_only=False,
     )
@@ -91,7 +91,8 @@ def parse_args():
     parser.add_argument("--height", type=int, default=480, help="高度")
     parser.add_argument("--width", type=int, default=832, help="宽度")
     parser.add_argument("--num_inference_steps", type=int, default=50, help="推理步数")
-    parser.add_argument("--num_frame_per_block", type=int, default=1, help="每块 latent 帧数")
+    parser.add_argument("--num_frame_per_block", type=int, default=3, help="每块 latent 帧数")
+    parser.add_argument("--local_attn_size", type=int, default=21, help="local attention size")
     parser.add_argument("--independent_first_frame", action="store_true", help="首帧单独成块")
     parser.add_argument("--context_noise", type=float, default=0.0, help="KV 刷新 timestep")
     parser.add_argument("--context_noise_inject", action="store_true", help="KV 刷新前对块输出加噪")
@@ -105,7 +106,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    pipeline = _init_models(args.model_name, device=args.device)
+    pipeline = _init_models(args.model_name, device=args.device, params=args)
     generate(pipeline, args)
 
 
