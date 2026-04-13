@@ -86,7 +86,7 @@ bash inference/inference_i2v.sh
 ```bash
 python inference/inference_i2v.py \
   --model_name checkpoints/Wan2.2-TI2V-5B-Diffusers \
-  --image_path examples/demo.jpg \
+  --image_path assets/images/demo.jpg \
   --prompt "The dog is walking happily in the road." \
   --num_frames 49 \
   --height 704 \

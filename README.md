@@ -103,7 +103,7 @@ Image-to-video — see `inference/inference_i2v.py` for all flags.
 ```bash
 python inference/inference_i2v.py \
   --model_name checkpoints/Wan2.2-TI2V-5B-Diffusers \
-  --image_path examples/demo.jpg \
+  --image_path assets/images/demo.jpg \
   --prompt "The dog is walking happily in the road." \
   --num_frames 81 \
   --height 704 \
@@ -121,7 +121,7 @@ python inference/inference_i2v.py \
 ```bash
 python inference/inference_i2v.py \
   --model_name checkpoints/Wan2.2-TI2V-5B-4Steps-Diffusers \
-  --image_path examples/cat.JPG \
+  --image_path assets/images/cat.JPG \
   --prompt "Summer beach vacation style, a white cat wearing sunglasses sits on a surfboard." \
   --num_frames 121 \
   --height 1280 \

@@ -121,7 +121,7 @@ class umT5Embedder:
 
 if __name__ == "__main__":
     encoder = umT5Embedder(
-        from_pretrained="/mnt/dataset/projs/pretrained_models/WoW-1-Wan-1.3B-2M-Diffusers", 
+        from_pretrained="checkpoints/Wan2.1-1.3B-Self-Forcing-Diffusers", 
         device='cuda:1')
     text_embeddings = encoder.get_text_embeddings(["Hello, world!"])
     print(f" text_embeddings.shape          = ", text_embeddings[0].shape) # torch.Size([1, 512, 4096])

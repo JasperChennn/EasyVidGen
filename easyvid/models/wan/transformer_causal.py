@@ -135,7 +135,7 @@ def _prepare_blockwise_causal_attn_mask_i2v(
     num_frame_per_block: int = 4,
     local_attn_size: int = -1,
 ) -> "BlockMask":
-    """I2V: first latent frame is its own block; remaining frames use ``num_frame_per_block`` (see casual_transformer)."""
+    """I2V: first latent frame is its own block; remaining frames use ``num_frame_per_block`` (see causal_transformer)."""
     if create_block_mask is None:
         raise ImportError("create_block_mask is not available; upgrade PyTorch.")
 
@@ -342,7 +342,7 @@ class WanAttnProcessor:
             encoder_hidden_states_img = encoder_hidden_states[:, :image_context_length]
             encoder_hidden_states = encoder_hidden_states[:, image_context_length:]
 
-        # Cross-attn: reuse cached encoder K/V (``casual_transformer`` crossattn_cache); only Q from current hidden states.
+        # Cross-attn: reuse cached encoder K/V (``causal_transformer`` crossattn_cache); only Q from current hidden states.
         if cross_attn_cache_ready:
             query = attn.to_q(hidden_states)
             query = attn.norm_q(query)
@@ -397,7 +397,7 @@ class WanAttnProcessor:
         key = key.unflatten(2, (attn.heads, -1))
         value = value.unflatten(2, (attn.heads, -1))
 
-        # Cross-attention: cache encoder K/V on first forward (``casual_transformer`` ``crossattn_cache``).
+        # Cross-attention: cache encoder K/V on first forward (``causal_transformer`` ``crossattn_cache``).
         if not is_self_attention and cross_attn_kv_cache is not None and not cross_attn_kv_cache.get("filled", False):
             cross_attn_kv_cache["k"] = key.clone()
             cross_attn_kv_cache["v"] = value.clone()
@@ -820,7 +820,7 @@ class WanRotaryPosEmbed(nn.Module):
         RoPE cos/sin for a contiguous range of latent frames (for KV-cache inference).
 
         Token order matches :meth:`forward` (flatten F then H then W). Temporal frequencies use
-        ``freqs_*[start_frame : start_frame + num_frames]``, aligned with ``casual_transformer.causal_rope_apply``.
+        ``freqs_*[start_frame : start_frame + num_frames]``, aligned with ``causal_transformer.causal_rope_apply``.
         """
         split_sizes = [self.t_dim, self.h_dim, self.w_dim]
         freqs_cos = self.freqs_cos.split(split_sizes, dim=1)
@@ -939,7 +939,7 @@ class WanTransformerBlock(nn.Module):
         )
         hidden_states = (hidden_states.float() + attn_output * gate_msa).type_as(hidden_states)
 
-        # 2. Cross-attention (optional encoder K/V cache; see ``WanAttnProcessor`` / ``casual_transformer`` crossattn_cache)
+        # 2. Cross-attention (optional encoder K/V cache; see ``WanAttnProcessor`` / ``causal_transformer`` crossattn_cache)
         norm_hidden_states = self.norm2(hidden_states.float()).type_as(hidden_states)
         attn_output = self.attn2(
             norm_hidden_states,
@@ -999,7 +999,7 @@ class WanTransformer3DModel(
             The number of channels to use for the added key and value projections. If `None`, no projection is used.
         use_causal_block_attention (`bool`, defaults to `False`):
             If True, self-attention uses block-wise temporal causal masks with ``flex_attention`` (same idea as
-            ``tmp/casual_transformer.py``). Requires a recent PyTorch with ``torch.nn.attention.flex_attention``.
+            ``tmp/causal_transformer.py``). Requires a recent PyTorch with ``torch.nn.attention.flex_attention``.
         local_attn_size (`int`, defaults to `-1`):
             Sliding window over past frames in units of frames; `-1` means full history within the causal prefix.
         num_frame_per_block (`int`, defaults to `1`):
@@ -1008,7 +1008,7 @@ class WanTransformer3DModel(
             If True and ``image_dim`` is set (I2V), use the first-frame-separated block mask (see ``_prepare_blockwise_causal_attn_mask_i2v``).
         sink_size (`int`, defaults to `0`):
             When using per-layer KV cache (``forward(..., kv_cache=...)``), number of **latent frames** kept as attention
-            sink when rolling the cache (same as ``casual_transformer.CausalWanSelfAttention``).
+            sink when rolling the cache (same as ``causal_transformer.CausalWanSelfAttention``).
         cross_attn_kv_cache (``forward`` only):
             Optional list (length ``num_layers``) of per-layer dicts from ``init_cross_attn_kv_cache``; caches
             encoder **K/V** for cross-attention so autoregressive steps skip ``to_k``/``to_v`` on text (and image K/V for I2V).
@@ -1111,7 +1111,7 @@ class WanTransformer3DModel(
         dtype: torch.dtype,
         device: torch.device,
     ) -> List[Dict[str, torch.Tensor]]:
-        """Allocate per-layer KV caches (``casual_transformer`` layout: ``k``, ``v``, ``global_end_index``, ``local_end_index``)."""
+        """Allocate per-layer KV caches (``causal_transformer`` layout: ``k``, ``v``, ``global_end_index``, ``local_end_index``)."""
         caches = []
         for _ in range(num_layers):
             caches.append(

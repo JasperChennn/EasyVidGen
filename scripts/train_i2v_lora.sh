@@ -22,7 +22,7 @@ lora_alpha=64
 noise_shift=4.0
 
 validation_prompt="Cut it open like you're cutting a cake."
-validation_images="examples/demo.jpg"
+validation_images="assets/images/demo.jpg"
 num_validation_videos=2
 
 validation_steps=100

@@ -322,7 +322,7 @@ class Qwen3Embedder:
 
 
 if __name__ == "__main__":
-    model_id = "/mnt/dataset/datasets/cjt_personal/pretrained_models/Qwen3-VL-2B-Instruct/"
+    model_id = "checkpoints/Qwen3-VL-2B-Instruct/"
     encoder = Qwen3Embedder(
         from_pretrained=model_id,
         device="cuda:0",
@@ -336,9 +336,9 @@ if __name__ == "__main__":
     #     print("text_embeddings.shape =", text_embeddings.shape)
     # print("time =", time() - t)
 
-    img1 = Image.open("/mnt/dataset/projs/projects/RoboTwin/policy/RDT/debug/debug.png")
-    img2 = Image.open("/mnt/dataset/projs/projects/RoboTwin/policy/RDT/debug/debug.png")
-    img3 = Image.open("/mnt/dataset/projs/projects/RoboTwin/policy/RDT/debug/debug.png")
+    img1 = Image.open("debug/debug.png")
+    img2 = Image.open("debug/debug.png")
+    img3 = Image.open("debug/debug.png")
     # 假设有多条指令和对应图片
     instructions = [
         "Describe this image in Chinese.",
@@ -371,7 +371,7 @@ if __name__ == "__main__":
             "content": [
                 {
                     "type": "image",
-                    "image": "/mnt/dataset/projs/projects/RoboTwin/policy/RDT/debug/debug.png",
+                    "image": "debug/debug.png",
                 },
                 {"type": "text", "text": "Describe this image in Chinese."},
             ],}

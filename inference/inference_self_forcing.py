@@ -17,7 +17,7 @@ from diffusers.schedulers import FlowMatchEulerDiscreteScheduler, UniPCMultistep
 from diffusers.utils import export_to_video
 from transformers import AutoTokenizer, UMT5EncoderModel
 
-from easyvid.models.wan.transformer_casual import WanTransformer3DModel
+from easyvid.models.wan.transformer_causal import WanTransformer3DModel
 from easyvid.pipelines.community.dmd.pipeline_sample_dmd import WanSelfForcingPipeline
 
 

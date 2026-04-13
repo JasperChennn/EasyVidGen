@@ -23,7 +23,7 @@ lora_alpha=64
 noise_shift=4.0
 
 validation_prompt="a person using a knife to cut a cake shaped like a dog"
-validation_images="examples/demo.jpg"
+validation_images="assets/images/demo.jpg"
 num_validation_videos=2
 
 num_train_epochs=10

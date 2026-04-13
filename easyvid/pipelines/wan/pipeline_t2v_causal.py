@@ -7,9 +7,9 @@
 
 """
 Wan T2V **causal / block-wise** 推理 pipeline（KV cache + cross-attn encoder cache），
-对齐 ``tmp/pipeline_casual.py`` 的时间分块与 ``easyvid.models.wan.transformer_casual`` 的 ``forward``。
+对齐 ``tmp/pipeline_causal.py`` 的时间分块与 ``easyvid.models.wan.transformer_causal`` 的 ``forward``。
 
-使用需加载带 ``transformer_casual.WanTransformer3DModel`` 能力（``kv_cache`` / ``cross_attn_kv_cache``）的权重。
+使用需加载带 ``transformer_causal.WanTransformer3DModel`` 能力（``kv_cache`` / ``cross_attn_kv_cache``）的权重。
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ class WanT2VCausalPipeline(WanPipeline):
     r"""
     与 :class:`~easyvid.pipelines.wan.pipeline_t2v.WanPipeline` 相同的组件与 ``encode_prompt`` 等接口，
     但 ``__call__`` 采用 **按 latent 块** 生成：自注意力 ``kv_cache`` + cross-attn ``cross_attn_kv_cache``，
-    并在每块去噪结束后用 ``context_noise`` 再跑一遍 transformer 以用干净上下文更新 KV（见 ``tmp/pipeline_casual.py``）。
+    并在每块去噪结束后用 ``context_noise`` 再跑一遍 transformer 以用干净上下文更新 KV（见 ``tmp/pipeline_causal.py``）。
 
     当前实现 **不支持** classifier-free guidance（``guidance_scale`` 须为 ``1.0``），且 **不支持** ``transformer_2`` / ``expand_timesteps``。
     """
@@ -100,7 +100,7 @@ class WanT2VCausalPipeline(WanPipeline):
         local_attn = num_latent_frames if local_attn == -1 else local_attn
         kv_cache_size = local_attn * frame_seq_length
 
-        from easyvid.models.wan.transformer_casual import WanTransformer3DModel as WanTransformer3DCasual
+        from easyvid.models.wan.transformer_causal import WanTransformer3DModel as WanTransformer3DCasual
 
         self._kv_cache = WanTransformer3DCasual.init_kv_cache(
             num_layers=num_layers,
@@ -164,7 +164,7 @@ class WanT2VCausalPipeline(WanPipeline):
             independent_first_frame: 首帧单独成块（无 ``initial_latent`` 时首块为 1 帧）。
             context_noise: 每块去噪结束后，用该 timestep 再前向一次以更新 KV（训练/推理脚本常用 0）。
             denoising_step_list: 块内子步 timestep 列表；若为 ``None``，则用 ``scheduler`` 的 ``num_inference_steps`` 条 ``timesteps``。
-            initial_latent: 可选 ``[B, F_in, C, H_lat, W_lat]`` 条件 latent（与 ``tmp/pipeline_casual`` 一致）。
+            initial_latent: 可选 ``[B, F_in, C, H_lat, W_lat]`` 条件 latent（与 ``tmp/pipeline_causal`` 一致）。
             warp_denoising_step: 若为 True，将 ``denoising_step_list`` 解释为训练步索引并映射到 ``scheduler.timesteps``。
         """
         if isinstance(callback_on_step_end, (PipelineCallback, MultiPipelineCallbacks)):

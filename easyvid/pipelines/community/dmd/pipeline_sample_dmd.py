@@ -5,7 +5,7 @@
 """
 DMD / self-forcing 因果 **前向采样** pipeline。
 
-在 :class:`~easyvid.pipelines.wan.pipeline_t2v_casual.WanT2VCausalPipeline` 基础上对齐
+在 :class:`~easyvid.pipelines.wan.pipeline_t2v_causal.WanT2VCausalPipeline` 基础上对齐
 外部 ``SelfForcingTrainingPipeline.inference_with_trajectory`` 的行为：
 
 - 可选：每个 temporal 块在 ``denoising_step_list`` 内 **随机提前结束**（用于 DMD 等训练时的子步采样）。
@@ -24,7 +24,7 @@ from diffusers.callbacks import MultiPipelineCallbacks, PipelineCallback
 from diffusers.utils import logging
 
 from easyvid.pipelines.wan.pipeline_t2v import WanPipelineOutput
-from easyvid.pipelines.wan.pipeline_t2v_casual import WanT2VCausalPipeline
+from easyvid.pipelines.wan.pipeline_t2v_causal import WanT2VCausalPipeline
 
 
 logger = logging.get_logger(__name__)
